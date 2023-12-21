@@ -4,6 +4,8 @@ import re
 
 app = Flask(__name__)
 
+USER_AGENT = "https://toolsadmin.wikimedia.org/tools/id/reference-counter"
+
 PROJECTS = [
     "wikipedia",
     "wikibooks",
@@ -40,7 +42,7 @@ def get_references(project, lang, revid):
     # TODO: get the wikitext by querying the replica db directly
     try:
         # Request the wikitext
-        session = mwapi.Session(f'https://{lang}.{project}.org')
+        session = mwapi.Session(f'https://{lang}.{project}.org', user_agent=USER_AGENT)
 
         result = session.get(
                     action="parse",
