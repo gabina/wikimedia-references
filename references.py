@@ -1,6 +1,8 @@
 from flask import abort, Flask
+import json
 import mwapi
 import re
+from werkzeug.exceptions import HTTPException
 
 app = Flask(__name__)
 
@@ -37,7 +39,7 @@ def hello_world():
 def get_references(project, lang, revid):
     error = validate_api_args(project, lang)
     if error:
-        return error, 400
+        return {"description": error}, 400
     
     # TODO: get the wikitext by querying the replica db directly
     try:
@@ -53,7 +55,7 @@ def get_references(project, lang, revid):
                 )
     
     except mwapi.errors.APIError as e:
-        return e.info, 404
+        return {"description": e.info}, 404
     
     wikitext = result['parse']['wikitext']
 
@@ -93,3 +95,17 @@ def validate_api_args(project, lang):
     if not project in PROJECTS:
         error+= f'Project {project} is not a valid project.'
     return error
+
+@app.errorhandler(HTTPException)
+def handle_exception(e):
+    """Return JSON instead of HTML for HTTP errors."""
+    # start with the correct headers and status code from the error
+    response = e.get_response()
+    # replace the body with JSON
+    response.data = json.dumps({
+        "code": e.code,
+        "name": e.name,
+        "description": e.description,
+    })
+    response.content_type = "application/json"
+    return response
