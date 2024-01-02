@@ -59,21 +59,41 @@ def get_references(project, lang, revid):
     
     wikitext = result['parse']['wikitext']
 
-    # Compile regular expressions
-    
-    # Match references using <ref /> tags
-    ref_singleton = re.compile(r'<ref(\s[^/>]*)?/>', re.M | re.I)
-    # Match regerences using <ref> and </ref> tags
-    ref_tag = re.compile(r'<ref(\s[^/>]*)?>[\s\S]*?</ref>', re.M | re.I)
-    # Match shortened footnote templates
-    shortened_footnote_templates = re.compile("|".join(SFN_TEMPLATES), re.I)
+    num_ref_singleton, num_ref_tag, num_ref_sft = count_references(wikitext)
+    num_ref = num_ref_singleton + num_ref_tag + num_ref_sft
 
-    # remove comments / lowercase for matching namespace prefixes better
-    wikitext = re.sub(r'<!--.*?-->', '', wikitext, flags=re.DOTALL).lower()
+    return {
+        "project": project,
+        "lang": lang,
+        "revid": revid,
+        "num_ref": num_ref,
+        }
+
+@app.route('/api/v1/debug/references/<project>/<lang>/<int:revid>')
+def get_references_debug(project, lang, revid):
+    error = validate_api_args(project, lang)
+    if error:
+        return {"description": error}, 400
     
-    num_ref_singleton = len(ref_singleton.findall(wikitext))
-    num_ref_tag = len(ref_tag.findall(wikitext))
-    num_ref_sft = len(shortened_footnote_templates.findall(wikitext))
+    # TODO: get the wikitext by querying the replica db directly
+    try:
+        # Request the wikitext
+        session = mwapi.Session(f'https://{lang}.{project}.org', user_agent=USER_AGENT)
+
+        result = session.get(
+                    action="parse",
+                    oldid=revid,
+                    prop='wikitext',
+                    format='json',
+                    formatversion=2
+                )
+    
+    except mwapi.errors.APIError as e:
+        return {"description": e.info}, 404
+    
+    wikitext = result['parse']['wikitext']
+
+    num_ref_singleton, num_ref_tag, num_ref_sft = count_references(wikitext)
     num_ref = num_ref_singleton + num_ref_tag + num_ref_sft
 
     return {
@@ -109,3 +129,22 @@ def handle_exception(e):
     })
     response.content_type = "application/json"
     return response
+
+def count_references(wikitext):
+    # Compile regular expressions
+    
+    # Match references using <ref /> tags
+    ref_singleton = re.compile(r'<ref(\s[^/>]*)?/>', re.M | re.I)
+    # Match regerences using <ref> and </ref> tags
+    ref_tag = re.compile(r'<ref(\s[^/>]*)?>[\s\S]*?</ref>', re.M | re.I)
+    # Match shortened footnote templates
+    shortened_footnote_templates = re.compile("|".join(SFN_TEMPLATES), re.I)
+
+    # remove comments / lowercase for matching namespace prefixes better
+    wikitext = re.sub(r'<!--.*?-->', '', wikitext, flags=re.DOTALL).lower()
+    
+    num_ref_singleton = len(ref_singleton.findall(wikitext))
+    num_ref_tag = len(ref_tag.findall(wikitext))
+    num_ref_sft = len(shortened_footnote_templates.findall(wikitext))
+
+    return (num_ref_singleton, num_ref_tag, num_ref_sft)
